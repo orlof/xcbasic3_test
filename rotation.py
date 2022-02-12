@@ -2,7 +2,7 @@ from math import sin, cos, pi
 
 matrix = [None] * 256
 for rotation in range(0, 32):
-    for distance_index, distance in enumerate([0, 2, 4, 6, 8, 10, 12, 15]):
+    for distance_index, distance in enumerate([0, 2, 4, 6, 7, 8, 9, 10]):
         angle = rotation * 2.0 * pi / 32.0
         x = round(distance * cos(angle) - 0 * sin(angle))
         y = -round(distance * sin(angle) + 0 * cos(angle))
