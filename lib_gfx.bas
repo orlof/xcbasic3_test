@@ -55,13 +55,6 @@ DIM PixelMask(200) AS BYTE
         NEXT t2
     NEXT t
 
-DIM OrMask(8) AS BYTE
-DIM AndMask(8) AS BYTE
-    FOR t AS BYTE = 0 TO 7
-        OrMask(t) = SHL(1, t)
-        AndMask(t) = OrMask(t) XOR $ff
-    NEXT t
-
 SUB hires_on(Bank AS BYTE, Bitmap AS BYTE, ScrMem AS BYTE) SHARED STATIC
     rem -- BANK 0 to 3
     poke $dd00, (peek($dd00) AND %11111100) OR (Bank XOR %11)
@@ -252,131 +245,134 @@ SUB SpriteMove(spr_nr AS BYTE, dx AS BYTE, dy AS BYTE) SHARED STATIC
     spry(spr_nr) = spry(spr_nr) + dy
 END SUB
 
-SUB spr_line(Shape AS BYTE, x1 AS BYTE, y1 AS BYTE, x2 AS BYTE, y2 AS BYTE) SHARED STATIC
-    DIM bresenham_x1 AS BYTE FAST
-    DIM bresenham_y1 AS BYTE FAST
-    DIM bresenham_x2 AS BYTE FAST
-    DIM bresenham_y2 AS BYTE FAST
-    DIM bresenham_dx AS BYTE FAST
-    DIM bresenham_dy AS BYTE FAST
-    DIM bresenham_err AS BYTE FAST
-    DIM bresenham_ptr AS WORD FAST
-    bresenham_ptr = BankAddr + 64 * CWORD(Shape)
+SUB SpriteClear(Shape AS BYTE) SHARED STATIC
+    MEMSET BankAddr + 64 * CWORD(Shape), 63, 0
+END SUB
+
+SUB SpriteLine(Shape AS BYTE, x1 AS BYTE, y1 AS BYTE, x2 AS BYTE, y2 AS BYTE) SHARED STATIC
+    DIM sprite_line_x1 AS BYTE FAST
+    DIM sprite_line_y1 AS BYTE FAST
+    DIM sprite_line_x2 AS BYTE FAST
+    DIM sprite_line_y2 AS BYTE FAST
+    DIM sprite_line_dx AS BYTE FAST
+    DIM sprite_line_dy AS BYTE FAST
+    DIM sprite_line_err AS BYTE FAST
+    DIM sprite_line_ptr AS WORD FAST
+    sprite_line_ptr = BankAddr + 64 * CWORD(Shape)
     ASM
         lda {x1}                ; init FAST variables
-        sta {bresenham_x1}
+        sta {sprite_line_x1}
         lda {y1}
-        sta {bresenham_y1}
+        sta {sprite_line_y1}
         lda {x2}
-        sta {bresenham_x2}
+        sta {sprite_line_x2}
         lda {y2}
-        sta {bresenham_y2}
+        sta {sprite_line_y2}
 
         ldx #$c6                ; calc dy, sy
-        lda {bresenham_y1}
+        lda {sprite_line_y1}
         sec
-        sbc {bresenham_y2}
-        bpl bresenham_dy_negative
+        sbc {sprite_line_y2}
+        bpl sprite_line_dy_negative
         ldx #$e6
         eor #$ff                ; neg
         clc
         adc #1
-bresenham_dy_negative
-        sta {bresenham_dy}
-        stx bresenham_commit_sy
+sprite_line_dy_negative
+        sta {sprite_line_dy}
+        stx sprite_line_commit_sy
 
         ldx #$c6                ; calc dx, sx
-        lda {bresenham_x1}
+        lda {sprite_line_x1}
         sec
-        sbc {bresenham_x2}
-        bpl bresenham_dx_negative
-        ldx #e6
+        sbc {sprite_line_x2}
+        bpl sprite_line_dx_negative
+        ldx #$e6
         eor #$ff                ; neg
         clc
         adc #1
-bresenham_dx_negative
-        sta {bresenham_dx}
-        stx bresenham_commit_sx
+sprite_line_dx_negative
+        sta {sprite_line_dx}
+        stx sprite_line_commit_sx
 
-        cmp {bresenham_dy}
-        beq bresenham_err_dy
-        bpl bresenham_err_dx
-bresenham_err_dy
-        lda {bresenham_dy}
+        cmp {sprite_line_dy}
+        beq sprite_line_err_dy
+        bpl sprite_line_err_dx
+sprite_line_err_dy
+        lda {sprite_line_dy}
         eor #$ff                ; neg
         clc
         adc #1
-bresenham_err_dx
-        sta {bresenham_err}
+sprite_line_err_dx
+        sta {sprite_line_err}
 
-        asl {bresenham_dx}
-        asl {bresenham_dy}
+        asl {sprite_line_dx}
+        asl {sprite_line_dy}
 
-bresenham_loop
+sprite_line_loop
         ; plot
-        lda {bresenham_x1}	    ; addr offset to y
+        lda {sprite_line_x1}	    ; addr offset to y
         lsr
         lsr
         lsr
         clc
-        adc {bresenham_y1}
-        adc {bresenham_y1}
-        adc {bresenham_y1}
+        adc {sprite_line_y1}
+        adc {sprite_line_y1}
+        adc {sprite_line_y1}
         tay
         
-	    lda {bresenham_x1}      ; bitmask offset to x
+	    lda {sprite_line_x1}      ; bitmask offset to x
         and #%00000111
         tax
         
-        lda ($fb),y
+        lda ({sprite_line_ptr}),y
         ora {PixelMask},x
-        sta ($fb),y
+        sta ({sprite_line_ptr}),y
         
         ; x1 != x2 ?
-        lda {bresenham_x1}
-        cmp {bresenham_x2}
-        bne bresenham_step
+        lda {sprite_line_x1}
+        cmp {sprite_line_x2}
+        bne sprite_line_step
 
         ; y1 != y2 ?
-        lda {bresenham_y1}
-        cmp {bresenham_y2}
-        bne bresenham_step
+        lda {sprite_line_y1}
+        cmp {sprite_line_y2}
+        bne sprite_line_step
 
-        jmp bresenham_end
+        rts
 
-bresenham_step
-        lda {bresenham_err}
+sprite_line_step
+        lda {sprite_line_err}
         pha
 
         clc
-        adc {bresenham_dx}
-        bmi bresenham_no_dx
-        beq bresenham_no_dx
+        adc {sprite_line_dx}
+        bmi sprite_line_no_dx
+        beq sprite_line_no_dx
 
-        lda {bresenham_err}
+        lda {sprite_line_err}
         sec
-        sbc {bresenham_dy}
-        sta {bresenham_err}
+        sbc {sprite_line_dy}
+        sta {sprite_line_err}
         
-bresenham_commit_sx
-        inc {bresenham_x1}
+sprite_line_commit_sx
+        inc {sprite_line_x1}
 
-bresenham_no_dx
+sprite_line_no_dx
         pla
-        cmp {bresenham_dy}
-        bpl bresenham_no_dy
+        cmp {sprite_line_dy}
+        bpl sprite_line_no_dy
         
-        lda {bresenham_err}
+        lda {sprite_line_err}
         clc
-        adc {bresenham_dx}
-        sta {bresenham_err}
+        adc {sprite_line_dx}
+        sta {sprite_line_err}
 
-bresenham_commit_sy
-        inc {bresenham_y1}
+sprite_line_commit_sy
+        inc {sprite_line_y1}
 
-bresenham_no_dy
-        jmp bresenham_loop
-bresenham_end
+sprite_line_no_dy
+        jmp sprite_line_loop
     END ASM
 END SUB
 
@@ -633,3 +629,69 @@ initraster:
     print SprPtrAddr, peek(SprPtrAddr)
 END SUB
 
+_RotX:
+DATA AS BYTE 0,2,4,6,7,8,9,10
+DATA AS BYTE 0,2,4,6,7,8,9,10
+DATA AS BYTE 0,2,4,6,6,7,8,9
+DATA AS BYTE 0,2,3,5,6,7,7,8
+DATA AS BYTE 0,1,3,4,5,6,6,7
+DATA AS BYTE 0,1,2,3,4,4,5,6
+DATA AS BYTE 0,1,2,2,3,3,3,4
+DATA AS BYTE 0,0,1,1,1,2,2,2
+DATA AS BYTE 0,0,0,0,0,0,0,0
+DATA AS BYTE 0,0,255,255,255,254,254,254
+DATA AS BYTE 0,255,254,254,253,253,253,252
+DATA AS BYTE 0,255,254,253,252,252,251,250
+DATA AS BYTE 0,255,253,252,251,250,250,249
+DATA AS BYTE 0,254,253,251,250,249,249,248
+DATA AS BYTE 0,254,252,250,250,249,248,247
+DATA AS BYTE 0,254,252,250,249,248,247,246
+DATA AS BYTE 0,254,252,250,249,248,247,246
+DATA AS BYTE 0,254,252,250,249,248,247,246
+DATA AS BYTE 0,254,252,250,250,249,248,247
+DATA AS BYTE 0,254,253,251,250,249,249,248
+DATA AS BYTE 0,255,253,252,251,250,250,249
+DATA AS BYTE 0,255,254,253,252,252,251,250
+DATA AS BYTE 0,255,254,254,253,253,253,252
+DATA AS BYTE 0,0,255,255,255,254,254,254
+DATA AS BYTE 0,0,0,0,0,0,0,0
+DATA AS BYTE 0,0,1,1,1,2,2,2
+DATA AS BYTE 0,1,2,2,3,3,3,4
+DATA AS BYTE 0,1,2,3,4,4,5,6
+DATA AS BYTE 0,1,3,4,5,6,6,7
+DATA AS BYTE 0,2,3,5,6,7,7,8
+DATA AS BYTE 0,2,4,6,6,7,8,9
+DATA AS BYTE 0,2,4,6,7,8,9,10
+_RotY:
+DATA AS BYTE 0,0,0,0,0,0,0,0
+DATA AS BYTE 0,0,255,255,255,254,254,254
+DATA AS BYTE 0,255,254,254,253,253,253,252
+DATA AS BYTE 0,255,254,253,252,252,251,250
+DATA AS BYTE 0,255,253,252,251,250,250,249
+DATA AS BYTE 0,254,253,251,250,249,249,248
+DATA AS BYTE 0,254,252,250,250,249,248,247
+DATA AS BYTE 0,254,252,250,249,248,247,246
+DATA AS BYTE 0,254,252,250,249,248,247,246
+DATA AS BYTE 0,254,252,250,249,248,247,246
+DATA AS BYTE 0,254,252,250,250,249,248,247
+DATA AS BYTE 0,254,253,251,250,249,249,248
+DATA AS BYTE 0,255,253,252,251,250,250,249
+DATA AS BYTE 0,255,254,253,252,252,251,250
+DATA AS BYTE 0,255,254,254,253,253,253,252
+DATA AS BYTE 0,0,255,255,255,254,254,254
+DATA AS BYTE 0,0,0,0,0,0,0,0
+DATA AS BYTE 0,0,1,1,1,2,2,2
+DATA AS BYTE 0,1,2,2,3,3,3,4
+DATA AS BYTE 0,1,2,3,4,4,5,6
+DATA AS BYTE 0,1,3,4,5,6,6,7
+DATA AS BYTE 0,2,3,5,6,7,7,8
+DATA AS BYTE 0,2,4,6,6,7,8,9
+DATA AS BYTE 0,2,4,6,7,8,9,10
+DATA AS BYTE 0,2,4,6,7,8,9,10
+DATA AS BYTE 0,2,4,6,7,8,9,10
+DATA AS BYTE 0,2,4,6,6,7,8,9
+DATA AS BYTE 0,2,3,5,6,7,7,8
+DATA AS BYTE 0,1,3,4,5,6,6,7
+DATA AS BYTE 0,1,2,3,4,4,5,6
+DATA AS BYTE 0,1,2,2,3,3,3,4
+DATA AS BYTE 0,0,1,1,1,2,2,2

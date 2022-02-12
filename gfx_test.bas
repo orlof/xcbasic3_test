@@ -1,10 +1,8 @@
 include "lib_gfx.bas"
 
-FOR w AS WORD = 0 TO 63
-    REM POKE CWORD($8400) + w, $ff
-    POKE CWORD($3000) + w, $ff
-    POKE CWORD(33792) + w, $ff
-NEXT w
+CALL hires_on(2, 1, 0)
+CALL hires_clear()
+CALL hires_color(COLOR_WHITE, COLOR_BLACK)
 
 FOR t AS BYTE = 0 TO 15
     CALL SpriteColor(t, t)
@@ -13,9 +11,13 @@ FOR t AS BYTE = 0 TO 15
     REM CALL SpriteShape(t, 192)
 NEXT t
 
-CALL hires_on(2, 1, 0)
-CALL hires_clear()
-CALL hires_color(COLOR_WHITE, COLOR_BLACK)
+CALL SpriteClear(16)
+CALL SpriteLine(16, 0, 0, 23, 20)
+CALL SpriteLine(16, 0, 20, 23, 0)
+CALL SpriteLine(16, 0, 0, 23, 0)
+CALL SpriteLine(16, 0, 20, 23, 20)
+CALL SpriteLine(16, 0, 0, 0, 20)
+CALL SpriteLine(16, 23, 0, 23, 20)
 
 CALL SpriteInit()
 
