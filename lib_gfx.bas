@@ -35,6 +35,10 @@ const SPR_COLOR         = $d027
 CONST TEXT_BANK        = 0
 CONST TEXT_SCRMEM      = 1
 
+DIM ZpAddr AS WORD FAST
+DIM HiresUnsetAddr AS WORD FAST
+    HiresUnsetAddr = 0
+
 DIM BankAddr AS WORD
     BankAddr = 16384 * TEXT_BANK
 DIM BitmapAddr AS WORD
@@ -102,15 +106,13 @@ SUB hires_color(inkcol AS BYTE, bgcol AS BYTE) SHARED STATIC
     MEMSET ScrMemAddr, 1000, SHL(inkcol, 4) OR bgcol
 END SUB
 
-poke $fc, 0
-
 SUB hires_unset() SHARED STATIC
     ASM
-        lda $fc
+        lda {HiresUnsetAddr}
         beq hires_unset_end
         
         lda #0
-        jmp ($fd)
+        jmp ({HiresUnsetAddr})
         sta $dead
         sta $dead
         sta $dead
@@ -123,9 +125,9 @@ SUB hires_unset() SHARED STATIC
         sta $dead
 hires_unset_end
         lda #<hires_unset_end
-        sta $fd
+        sta #<{HiresUnsetAddr}
         lda #>hires_unset_end
-        sta $fe
+        sta #>{HiresUnsetAddr}
     END ASM
 END SUB
 
@@ -245,30 +247,21 @@ SUB SpriteMove(spr_nr AS BYTE, dx AS BYTE, dy AS BYTE) SHARED STATIC
     spry(spr_nr) = spry(spr_nr) + dy
 END SUB
 
-SUB SpriteClear(Shape AS BYTE) SHARED STATIC
+SUB ShapeClear(Shape AS BYTE) SHARED STATIC
     MEMSET BankAddr + 64 * CWORD(Shape), 63, 0
 END SUB
 
-SUB SpriteLine(Shape AS BYTE, x1 AS BYTE, y1 AS BYTE, x2 AS BYTE, y2 AS BYTE) SHARED STATIC
-    DIM sprite_line_x1 AS BYTE FAST
-    DIM sprite_line_y1 AS BYTE FAST
-    DIM sprite_line_x2 AS BYTE FAST
-    DIM sprite_line_y2 AS BYTE FAST
-    DIM sprite_line_dx AS BYTE FAST
-    DIM sprite_line_dy AS BYTE FAST
-    DIM sprite_line_err AS BYTE FAST
-    DIM sprite_line_ptr AS WORD FAST
-    sprite_line_ptr = BankAddr + 64 * CWORD(Shape)
-    ASM
-        lda {x1}                ; init FAST variables
-        sta {sprite_line_x1}
-        lda {y1}
-        sta {sprite_line_y1}
-        lda {x2}
-        sta {sprite_line_x2}
-        lda {y2}
-        sta {sprite_line_y2}
+DIM sprite_line_x1 AS BYTE FAST
+DIM sprite_line_y1 AS BYTE FAST
+DIM sprite_line_x2 AS BYTE FAST
+DIM sprite_line_y2 AS BYTE FAST
+DIM sprite_line_dx AS BYTE FAST
+DIM sprite_line_dy AS BYTE FAST
+DIM sprite_line_err AS BYTE FAST
 
+SUB ShapeDrawLine(Shape AS BYTE) SHARED STATIC
+    ZpAddr = BankAddr + 64 * CWORD(Shape)
+    ASM
         ldx #$c6                ; calc dy, sy
         lda {sprite_line_y1}
         sec
@@ -325,9 +318,9 @@ sprite_line_loop
         and #%00000111
         tax
         
-        lda ({sprite_line_ptr}),y
+        lda ({ZpAddr}),y
         ora {PixelMask},x
-        sta ({sprite_line_ptr}),y
+        sta ({ZpAddr}),y
         
         ; x1 != x2 ?
         lda {sprite_line_x1}
@@ -374,6 +367,41 @@ sprite_line_commit_sy
 sprite_line_no_dy
         jmp sprite_line_loop
     END ASM
+END SUB
+
+DIM RotX(256) AS BYTE @ _RotX
+DIM RotY(256) AS BYTE @ _RotY
+
+CONST SHAPE_NEXT = %01000000
+CONST SHAPE_SKIP = %00100000
+
+SUB ShapeDrawGeometry(Shape AS BYTE, GeometryAddr AS WORD, Angle AS BYTE) SHARED STATIC
+    DIM pAngle AS BYTE
+    DIM pRadius AS BYTE
+    DIM pIndex AS BYTE
+
+    pAngle = PEEK(GeometryAddr) + Angle
+    pRadius = PEEK(GeometryAddr + 1)
+    pIndex = (pAngle AND %11111000) OR (pRadius AND %00000111)
+    sprite_line_x2 = RotX(pIndex)
+    sprite_line_y2 = RotY(pIndex)
+    GeometryAddr = GeometryAddr + 2
+
+    DO
+        sprite_line_x1 = sprite_line_x2
+        sprite_line_y1 = sprite_line_y2
+
+        pAngle = PEEK(GeometryAddr) + Angle
+        pRadius = PEEK(GeometryAddr + 1)
+        pIndex = (pAngle AND %11111000) OR (pRadius AND %00000111)
+        sprite_line_x2 = RotX(pIndex)
+        sprite_line_y2 = RotY(pIndex)
+
+        IF (pRadius AND SHAPE_SKIP) = 0 THEN
+            CALL ShapeDrawLine(Shape)
+        END IF
+        GeometryAddr = GeometryAddr + 2
+    LOOP WHILE (PEEK(GeometryAddr + 1) AND SHAPE_NEXT) = 0
 END SUB
 
 SUB SpriteUpdate() SHARED STATIC
@@ -630,68 +658,68 @@ initraster:
 END SUB
 
 _RotX:
-DATA AS BYTE 0,2,4,6,7,8,9,10
-DATA AS BYTE 0,2,4,6,7,8,9,10
-DATA AS BYTE 0,2,4,6,6,7,8,9
-DATA AS BYTE 0,2,3,5,6,7,7,8
-DATA AS BYTE 0,1,3,4,5,6,6,7
-DATA AS BYTE 0,1,2,3,4,4,5,6
-DATA AS BYTE 0,1,2,2,3,3,3,4
-DATA AS BYTE 0,0,1,1,1,2,2,2
-DATA AS BYTE 0,0,0,0,0,0,0,0
-DATA AS BYTE 0,0,255,255,255,254,254,254
-DATA AS BYTE 0,255,254,254,253,253,253,252
-DATA AS BYTE 0,255,254,253,252,252,251,250
-DATA AS BYTE 0,255,253,252,251,250,250,249
-DATA AS BYTE 0,254,253,251,250,249,249,248
-DATA AS BYTE 0,254,252,250,250,249,248,247
-DATA AS BYTE 0,254,252,250,249,248,247,246
-DATA AS BYTE 0,254,252,250,249,248,247,246
-DATA AS BYTE 0,254,252,250,249,248,247,246
-DATA AS BYTE 0,254,252,250,250,249,248,247
-DATA AS BYTE 0,254,253,251,250,249,249,248
-DATA AS BYTE 0,255,253,252,251,250,250,249
-DATA AS BYTE 0,255,254,253,252,252,251,250
-DATA AS BYTE 0,255,254,254,253,253,253,252
-DATA AS BYTE 0,0,255,255,255,254,254,254
-DATA AS BYTE 0,0,0,0,0,0,0,0
-DATA AS BYTE 0,0,1,1,1,2,2,2
-DATA AS BYTE 0,1,2,2,3,3,3,4
-DATA AS BYTE 0,1,2,3,4,4,5,6
-DATA AS BYTE 0,1,3,4,5,6,6,7
-DATA AS BYTE 0,2,3,5,6,7,7,8
-DATA AS BYTE 0,2,4,6,6,7,8,9
-DATA AS BYTE 0,2,4,6,7,8,9,10
+DATA AS BYTE 11,13,15,17,18,19,20,21
+DATA AS BYTE 11,13,15,17,18,19,20,21
+DATA AS BYTE 11,13,15,17,17,18,19,20
+DATA AS BYTE 11,13,14,16,17,18,18,19
+DATA AS BYTE 11,12,14,15,16,17,17,18
+DATA AS BYTE 11,12,13,14,15,15,16,17
+DATA AS BYTE 11,12,13,13,14,14,14,15
+DATA AS BYTE 11,11,12,12,12,13,13,13
+DATA AS BYTE 11,11,11,11,11,11,11,11
+DATA AS BYTE 11,11,10,10,10,9,9,9
+DATA AS BYTE 11,10,9,9,8,8,8,7
+DATA AS BYTE 11,10,9,8,7,7,6,5
+DATA AS BYTE 11,10,8,7,6,5,5,4
+DATA AS BYTE 11,9,8,6,5,4,4,3
+DATA AS BYTE 11,9,7,5,5,4,3,2
+DATA AS BYTE 11,9,7,5,4,3,2,1
+DATA AS BYTE 11,9,7,5,4,3,2,1
+DATA AS BYTE 11,9,7,5,4,3,2,1
+DATA AS BYTE 11,9,7,5,5,4,3,2
+DATA AS BYTE 11,9,8,6,5,4,4,3
+DATA AS BYTE 11,10,8,7,6,5,5,4
+DATA AS BYTE 11,10,9,8,7,7,6,5
+DATA AS BYTE 11,10,9,9,8,8,8,7
+DATA AS BYTE 11,11,10,10,10,9,9,9
+DATA AS BYTE 11,11,11,11,11,11,11,11
+DATA AS BYTE 11,11,12,12,12,13,13,13
+DATA AS BYTE 11,12,13,13,14,14,14,15
+DATA AS BYTE 11,12,13,14,15,15,16,17
+DATA AS BYTE 11,12,14,15,16,17,17,18
+DATA AS BYTE 11,13,14,16,17,18,18,19
+DATA AS BYTE 11,13,15,17,17,18,19,20
+DATA AS BYTE 11,13,15,17,18,19,20,21
 _RotY:
-DATA AS BYTE 0,0,0,0,0,0,0,0
-DATA AS BYTE 0,0,255,255,255,254,254,254
-DATA AS BYTE 0,255,254,254,253,253,253,252
-DATA AS BYTE 0,255,254,253,252,252,251,250
-DATA AS BYTE 0,255,253,252,251,250,250,249
-DATA AS BYTE 0,254,253,251,250,249,249,248
-DATA AS BYTE 0,254,252,250,250,249,248,247
-DATA AS BYTE 0,254,252,250,249,248,247,246
-DATA AS BYTE 0,254,252,250,249,248,247,246
-DATA AS BYTE 0,254,252,250,249,248,247,246
-DATA AS BYTE 0,254,252,250,250,249,248,247
-DATA AS BYTE 0,254,253,251,250,249,249,248
-DATA AS BYTE 0,255,253,252,251,250,250,249
-DATA AS BYTE 0,255,254,253,252,252,251,250
-DATA AS BYTE 0,255,254,254,253,253,253,252
-DATA AS BYTE 0,0,255,255,255,254,254,254
-DATA AS BYTE 0,0,0,0,0,0,0,0
-DATA AS BYTE 0,0,1,1,1,2,2,2
-DATA AS BYTE 0,1,2,2,3,3,3,4
-DATA AS BYTE 0,1,2,3,4,4,5,6
-DATA AS BYTE 0,1,3,4,5,6,6,7
-DATA AS BYTE 0,2,3,5,6,7,7,8
-DATA AS BYTE 0,2,4,6,6,7,8,9
-DATA AS BYTE 0,2,4,6,7,8,9,10
-DATA AS BYTE 0,2,4,6,7,8,9,10
-DATA AS BYTE 0,2,4,6,7,8,9,10
-DATA AS BYTE 0,2,4,6,6,7,8,9
-DATA AS BYTE 0,2,3,5,6,7,7,8
-DATA AS BYTE 0,1,3,4,5,6,6,7
-DATA AS BYTE 0,1,2,3,4,4,5,6
-DATA AS BYTE 0,1,2,2,3,3,3,4
-DATA AS BYTE 0,0,1,1,1,2,2,2
+DATA AS BYTE 10,10,10,10,10,10,10,10
+DATA AS BYTE 10,10,9,9,9,8,8,8
+DATA AS BYTE 10,9,8,8,7,7,7,6
+DATA AS BYTE 10,9,8,7,6,6,5,4
+DATA AS BYTE 10,9,7,6,5,4,4,3
+DATA AS BYTE 10,8,7,5,4,3,3,2
+DATA AS BYTE 10,8,6,4,4,3,2,1
+DATA AS BYTE 10,8,6,4,3,2,1,0
+DATA AS BYTE 10,8,6,4,3,2,1,0
+DATA AS BYTE 10,8,6,4,3,2,1,0
+DATA AS BYTE 10,8,6,4,4,3,2,1
+DATA AS BYTE 10,8,7,5,4,3,3,2
+DATA AS BYTE 10,9,7,6,5,4,4,3
+DATA AS BYTE 10,9,8,7,6,6,5,4
+DATA AS BYTE 10,9,8,8,7,7,7,6
+DATA AS BYTE 10,10,9,9,9,8,8,8
+DATA AS BYTE 10,10,10,10,10,10,10,10
+DATA AS BYTE 10,10,11,11,11,12,12,12
+DATA AS BYTE 10,11,12,12,13,13,13,14
+DATA AS BYTE 10,11,12,13,14,14,15,16
+DATA AS BYTE 10,11,13,14,15,16,16,17
+DATA AS BYTE 10,12,13,15,16,17,17,18
+DATA AS BYTE 10,12,14,16,16,17,18,19
+DATA AS BYTE 10,12,14,16,17,18,19,20
+DATA AS BYTE 10,12,14,16,17,18,19,20
+DATA AS BYTE 10,12,14,16,17,18,19,20
+DATA AS BYTE 10,12,14,16,16,17,18,19
+DATA AS BYTE 10,12,13,15,16,17,17,18
+DATA AS BYTE 10,11,13,14,15,16,16,17
+DATA AS BYTE 10,11,12,13,14,14,15,16
+DATA AS BYTE 10,11,12,12,13,13,13,14
+DATA AS BYTE 10,10,11,11,11,12,12,12

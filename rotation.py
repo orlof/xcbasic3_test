@@ -4,8 +4,8 @@ matrix = [None] * 256
 for rotation in range(0, 32):
     for distance_index, distance in enumerate([0, 2, 4, 6, 7, 8, 9, 10]):
         angle = rotation * 2.0 * pi / 32.0
-        x = round(distance * cos(angle) - 0 * sin(angle))
-        y = -round(distance * sin(angle) + 0 * cos(angle))
+        x = round(distance * cos(angle) - 0 * sin(angle)) + 11
+        y = -round(distance * sin(angle) + 0 * cos(angle)) + 10
         matrix[rotation << 3 | distance_index] = (x, y)
 
 print("_RotX:")
