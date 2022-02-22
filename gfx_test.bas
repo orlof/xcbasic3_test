@@ -24,6 +24,7 @@ DIM Geometry(255) AS Vertice @ _Geometry
 CALL hires_on(2, 1, 0)
 CALL hires_clear()
 CALL hires_color(COLOR_WHITE, COLOR_BLACK)
+CALL hires_unset()
 
 DIM shape(16) AS WORD
     shape(0) = @GeomShip0
@@ -43,8 +44,11 @@ DIM shape(16) AS WORD
     shape(14) = @GeomShip14
     shape(15) = @GeomShip15
 
+DIM t AS BYTE
+DIM s AS BYTE
+
 DIM Ships(16) AS Ship
-    FOR t AS BYTE = 0 TO 15
+    FOR t = 0 TO 15
         Ships(t).angle = 16 * t
         Ships(t).speed = (t AND 3) + 1
         Ships(t).rotation = t-8
@@ -65,22 +69,49 @@ DIM Ships(16) AS Ship
 
 CALL SpriteInit()
 
+TYPE Pixel
+    x AS BYTE
+    y AS BYTE
+    dx AS BYTE
+    dy AS BYTE
+END TYPE
+
+DIM Ammo(15) AS Pixel
+
 looper:
-    FOR t AS BYTE = 0 TO 15
-        DIM PrevAngle AS BYTE: PrevAngle = Ships(t).angle
-        Ships(t).angle = Ships(t).angle + Ships(t).rotation
-        IF ((Ships(t).angle XOR PrevAngle) AND %11111000) <> 0 THEN
-            Ships(t).slot = Ships(t).slot XOR %00010000
-            CALL ShapeClear(Ships(t).slot)
-            CALL ShapeDrawGeometry(Ships(t).slot, Ships(t).geometry, Ships(t).angle)
-            CALL SpriteShape(t, Ships(t).slot)
-        END IF
-        CALL SpriteMoveForward(t, Ships(t).angle, Ships(t).speed)
-    NEXT t
-    CALL SpriteUpdate()
+    FOR s = 0 TO 15
+        Ammo(s).x = sprx(s) - 24 + 11
+        Ammo(s).y = spry(s) - 50 + 10
+        index = (Ships(s).angle AND %11111000) OR 1
+        Ammo(s).dx = RotX(index) - 11
+        Ammo(s).dy = RotY(index) - 10
+        index = (Ships(s).angle AND %11111000) OR Ships(s).speed
+        Ammo(s).dx = Ammo(s).dx + RotX(index) - 11
+        Ammo(s).dy = Ammo(s).dy + RotY(index) - 10
+    NEXT s
+    FOR s = 0 TO 50
+        CALL hires_unset()
+        FOR t = 0 TO 15
+            Ammo(t).x = Ammo(t).x + Ammo(t).dx
+            Ammo(t).y = Ammo(t).y + Ammo(t).dy
+            CALL hires_set(Ammo(t).x, Ammo(t).y)
+        NEXT t
+        FOR t = 0 TO 15            
+            DIM PrevAngle AS BYTE: PrevAngle = Ships(t).angle
+            Ships(t).angle = Ships(t).angle + Ships(t).rotation
+            IF ((Ships(t).angle XOR PrevAngle) AND %11111000) <> 0 THEN
+                Ships(t).slot = Ships(t).slot XOR %00010000
+                CALL ShapeClear(Ships(t).slot)
+                CALL ShapeDrawGeometry(Ships(t).slot, Ships(t).geometry, Ships(t).angle)
+                CALL SpriteShape(t, Ships(t).slot)
+            END IF
+            CALL SpriteMoveForward(t, Ships(t).angle, Ships(t).speed)
+        NEXT t
+        CALL SpriteUpdate()
+    NEXT s
 goto looper
 
-REM Radial: 0 to 7 -> [0, 2, 4, 6, 8, 10, 12, 15]
+REM Radial: 0 to 7 -> [0, 2, 4, 6, 7, 8, 9, 10]
 REM Angular: 0 to 31 -> 0 = Right, 8 = Up, 16 = Left, 24 = Down (11.6 deg / step)
 REM ship = 0
 

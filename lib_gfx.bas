@@ -36,6 +36,7 @@ CONST TEXT_BANK        = 0
 CONST TEXT_SCRMEM      = 1
 
 DIM ZpAddr AS WORD FAST
+DIM HiresSetAddr AS WORD FAST
 DIM HiresUnsetAddr AS WORD FAST
     HiresUnsetAddr = 0
 
@@ -108,7 +109,7 @@ END SUB
 
 SUB hires_unset() SHARED STATIC
     ASM
-        lda {HiresUnsetAddr}
+        lda {HiresUnsetAddr}+1
         beq hires_unset_end
         
         lda #0
@@ -123,11 +124,33 @@ SUB hires_unset() SHARED STATIC
         sta $dead
         sta $dead
         sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
+        sta $dead
 hires_unset_end
         lda #<hires_unset_end
-        sta #<{HiresUnsetAddr}
+        sta {HiresUnsetAddr}
         lda #>hires_unset_end
-        sta #>{HiresUnsetAddr}
+        sta {HiresUnsetAddr}+1
     END ASM
 END SUB
 
@@ -144,30 +167,30 @@ SUB hires_set(x AS BYTE, y AS BYTE) SHARED STATIC
         lda {Y_Table_Lo},y
         clc
         adc {X_Table},x
-        sta $fb
+        sta {HiresSetAddr}
         lda #0
         adc {Y_Table_Hi},y
-        sta $fc
+        sta {HiresSetAddr}+1
 
         lda {PixelMask},x
         ldy #0
 
-        ora ($fb),y
-        sta ($fb),y
+        ora ({HiresSetAddr}),y
+        sta ({HiresSetAddr}),y
 
-        lda $fd                     ; add to erase queue
+        lda {HiresUnsetAddr}                     ; add to erase queue
         sec
         sbc #3
-        sta $fd
+        sta {HiresUnsetAddr}
         bcs hires_set_no_borrow
-        dec $fe
+        dec {HiresUnsetAddr}+1
 hires_set_no_borrow
         ldy #1
-        lda $fb
-        sta ($fd),y
+        lda {HiresSetAddr}
+        sta ({HiresUnsetAddr}),y
         iny
-        lda $fc
-        sta ($fd),y
+        lda {HiresSetAddr}+1
+        sta ({HiresUnsetAddr}),y
 hires_set_end
     END ASM
 END SUB
@@ -223,13 +246,13 @@ DIM sprirqcounter AS BYTE FAST
 DIM sortorder(16) AS BYTE FAST
 
 REM Unsorted sprite table
-DIM sprx(16) AS BYTE
-DIM spry(16) AS BYTE
+DIM sprx(16) AS BYTE SHARED
+DIM spry(16) AS BYTE SHARED
 DIM sprc(16) AS BYTE
 DIM sprf(16) AS BYTE
 
-DIM RotX(256) AS BYTE @ _RotX
-DIM RotY(256) AS BYTE @ _RotY
+DIM RotX(256) AS BYTE @ _RotX SHARED
+DIM RotY(256) AS BYTE @ _RotY SHARED
 
 SUB SpriteColor(spr_nr AS BYTE, color AS BYTE) SHARED STATIC
     sprc(spr_nr) = color
