@@ -215,7 +215,6 @@ END SUB
 
 REM Main program must write a nonzero value 
 REM here when it wants new sprites to be displayed
-DIM numsprites AS BYTE FAST
 DIM sprupdateflag AS BYTE FAST
 DIM sortedsprites AS BYTE FAST
 DIM tempvariable AS BYTE FAST
@@ -228,6 +227,9 @@ DIM sprx(16) AS BYTE
 DIM spry(16) AS BYTE
 DIM sprc(16) AS BYTE
 DIM sprf(16) AS BYTE
+
+DIM RotX(256) AS BYTE @ _RotX
+DIM RotY(256) AS BYTE @ _RotY
 
 SUB SpriteColor(spr_nr AS BYTE, color AS BYTE) SHARED STATIC
     sprc(spr_nr) = color
@@ -245,6 +247,12 @@ END SUB
 SUB SpriteMove(spr_nr AS BYTE, dx AS BYTE, dy AS BYTE) SHARED STATIC
     sprx(spr_nr) = sprx(spr_nr) + dx
     spry(spr_nr) = spry(spr_nr) + dy
+END SUB
+
+SUB SpriteMoveForward(spr_nr AS BYTE, angle AS BYTE, speed AS BYTE) SHARED STATIC
+    DIM index AS BYTE: index = (angle AND %11111000) OR (speed AND %00000111)
+    sprx(spr_nr) = sprx(spr_nr) + (RotX(index) - 11)
+    spry(spr_nr) = spry(spr_nr) + (RotY(index) - 10)
 END SUB
 
 SUB ShapeClear(Shape AS BYTE) SHARED STATIC
@@ -369,9 +377,6 @@ sprite_line_no_dy
     END ASM
 END SUB
 
-DIM RotX(256) AS BYTE @ _RotX
-DIM RotY(256) AS BYTE @ _RotY
-
 CONST SHAPE_NEXT = %01000000
 CONST SHAPE_SKIP = %00100000
 
@@ -422,7 +427,31 @@ SUB SpriteInit() SHARED STATIC
 
     ASM
         ;Main program
-                jmp initraster
+        ;Routine to init the raster interrupt system
+initraster:
+                lda {SprPtrAddr}
+                sta irq2_sprf+1
+                lda {SprPtrAddr}+1
+                sta irq2_sprf+2
+
+                sei
+                lda #<irq1
+                sta $0314
+                lda #>irq1
+                sta $0315
+                lda #$7f                    ;CIA interrupt off
+                sta $dc0d
+                lda #$01                    ;Raster interrupt on
+                sta $d01a
+                lda $d011
+                and #%01111111              ;High bit of interrupt position = 0
+                sta $d011
+                lda #IRQ1LINE               ;Line where next IRQ happens
+                sta $d012
+                lda $dc0d                   ;Acknowledge IRQ (to be sure)
+                cli
+
+                rts
 
 IRQ1LINE        = $fc           ;This is the place on screen where the sorting
                                 ;IRQ happens
@@ -442,13 +471,13 @@ irq1:           dec $d019                       ;Acknowledge raster interrupt
                 sta $d00d
                 sta $d00f
 
-                lda {sprupdateflag}               ;New sprites to be sorted?
+                lda {sprupdateflag}             ;New sprites to be sorted?
                 beq irq1_nonewsprites
                 lda #$00
                 sta {sprupdateflag}
-                lda {numsprites}                  ;Take number of sprites given
+                lda #16                         ;Take number of sprites given
                                                 ;by the main program
-                sta {sortedsprites}               ;If it�s zero, don�t need to
+                sta {sortedsprites}             ;If it�s zero, don�t need to
                 bne irq1_beginsort              ;sort
 
 irq1_nonewsprites:
@@ -471,7 +500,7 @@ irq1_notmorethan8:
 irq1_nospritesatall:
                 jmp $ea81
 
-irq1_beginsort: inc $d020
+irq1_beginsort: ; inc $d020
                 ldx #MAXSPR
                 dex
                 cpx {sortedsprites}
@@ -520,7 +549,7 @@ irq1_sortloop3: ldy {sortorder},x                ;Final loop:
                 inx
                 cpx {sortedsprites}
                 bcc irq1_sortloop3
-                dec $d020
+                ; dec $d020
                 jmp irq1_nonewsprites
 
         ;Raster interrupt 2. This is where sprite displaying happens
@@ -625,36 +654,7 @@ ortbl:          dc.b 1
                 dc.b 64
                 dc.b 255-128
                 dc.b 128
-
-        ;Routine to init the raster interrupt system
-initraster:
-                lda {SprPtrAddr}
-                sta irq2_sprf+1
-                lda {SprPtrAddr}+1
-                sta irq2_sprf+2
-
-                sei
-                lda #<irq1
-                sta $0314
-                lda #>irq1
-                sta $0315
-                lda #$7f                    ;CIA interrupt off
-                sta $dc0d
-                lda #$01                    ;Raster interrupt on
-                sta $d01a
-                lda $d011
-                and #%01111111              ;High bit of interrupt position = 0
-                sta $d011
-                lda #IRQ1LINE               ;Line where next IRQ happens
-                sta $d012
-                lda $dc0d                   ;Acknowledge IRQ (to be sure)
-                cli
-
-                ; ldx #MAXSPR                 ;Use all sprites
-                ldx #16                 ;Use all sprites
-                stx {numsprites}
     END ASM
-    print SprPtrAddr, peek(SprPtrAddr)
 END SUB
 
 _RotX:
