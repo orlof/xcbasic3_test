@@ -6,6 +6,7 @@ TYPE Vertice
 END TYPE
 
 TYPE Ship
+    VisibleAngle AS BYTE
     angle AS BYTE
     rotation AS BYTE
     speed AS BYTE
@@ -21,10 +22,10 @@ DIM Geometry(255) AS Vertice @ _Geometry
         Geometry(Index).Angular = SHL(Geometry(Index).Angular, 3)
     NEXT Index
 
-CALL hires_on(2, 1, 0)
-CALL hires_clear()
+CALL hires_setup(2, 1, 0)
 CALL hires_color(COLOR_WHITE, COLOR_BLACK)
-CALL hires_unset()
+CALL hires_clear()
+CALL hires_on()
 
 DIM shape(16) AS WORD
     shape(0) = @GeomShip0
@@ -50,8 +51,9 @@ DIM s AS BYTE
 DIM Ships(16) AS Ship
     FOR t = 0 TO 15
         Ships(t).angle = 16 * t
-        Ships(t).speed = (t AND 3) + 1
-        Ships(t).rotation = t-8
+        Ships(t).VisibleAngle = Ships(t).angle
+        Ships(t).speed = 2
+        Ships(t).rotation = SGN(CINT(t)-8)
         Ships(t).geometry = shape(t)
         Ships(t).slot = 32 + t
         
@@ -77,17 +79,15 @@ TYPE Pixel
 END TYPE
 
 DIM Ammo(15) AS Pixel
+DIM NumShapesUpdated AS BYTE
 
 looper:
     FOR s = 0 TO 15
         Ammo(s).x = sprx(s) - 24 + 11
         Ammo(s).y = spry(s) - 50 + 10
-        index = (Ships(s).angle AND %11111000) OR 1
+        index = (Ships(s).angle AND %11111000) OR 4
         Ammo(s).dx = RotX(index) - 11
         Ammo(s).dy = RotY(index) - 10
-        index = (Ships(s).angle AND %11111000) OR Ships(s).speed
-        Ammo(s).dx = Ammo(s).dx + RotX(index) - 11
-        Ammo(s).dy = Ammo(s).dy + RotY(index) - 10
     NEXT s
     FOR s = 0 TO 50
         CALL hires_unset()
@@ -96,14 +96,18 @@ looper:
             Ammo(t).y = Ammo(t).y + Ammo(t).dy
             CALL hires_set(Ammo(t).x, Ammo(t).y)
         NEXT t
+        NumShapesUpdated = 0
         FOR t = 0 TO 15            
-            DIM PrevAngle AS BYTE: PrevAngle = Ships(t).angle
             Ships(t).angle = Ships(t).angle + Ships(t).rotation
-            IF ((Ships(t).angle XOR PrevAngle) AND %11111000) <> 0 THEN
-                Ships(t).slot = Ships(t).slot XOR %00010000
-                CALL ShapeClear(Ships(t).slot)
-                CALL ShapeDrawGeometry(Ships(t).slot, Ships(t).geometry, Ships(t).angle)
-                CALL SpriteShape(t, Ships(t).slot)
+            IF NumShapesUpdated < 2 THEN
+                IF ((Ships(t).angle XOR Ships(t).VisibleAngle) AND %11111000) <> 0 THEN
+                    NumShapesUpdated = NumShapesUpdated + 1
+                    Ships(t).VisibleAngle = Ships(t).angle
+                    Ships(t).slot = Ships(t).slot XOR %00010000
+                    CALL ShapeClear(Ships(t).slot)
+                    CALL ShapeDrawGeometry(Ships(t).slot, Ships(t).geometry, Ships(t).angle)
+                    CALL SpriteShape(t, Ships(t).slot)
+                END IF
             END IF
             CALL SpriteMoveForward(t, Ships(t).angle, Ships(t).speed)
         NEXT t

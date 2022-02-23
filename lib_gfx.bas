@@ -1,3 +1,23 @@
+DECLARE SUB hires_setup(Bank AS BYTE, Bitmap AS BYTE, ScrMem AS BYTE) SHARED STATIC
+DECLARE SUB hires_on() SHARED STATIC
+DECLARE SUB hires_off() SHARED STATIC
+DECLARE SUB hires_clear() SHARED STATIC
+DECLARE SUB hires_color(inkcol AS BYTE, bgcol AS BYTE) SHARED STATIC
+DECLARE SUB hires_text(x AS BYTE, y AS BYTE, len AS BYTE, text AS STRING * 40) SHARED STATIC
+
+DECLARE SUB hires_set(x AS BYTE, y AS BYTE) SHARED STATIC
+DECLARE SUB hires_unset() SHARED STATIC
+
+DECLARE SUB SpriteInit() SHARED STATIC
+DECLARE SUB SpriteUpdate() SHARED STATIC
+DECLARE SUB ShapeDrawGeometry(Shape AS BYTE, GeometryAddr AS WORD, Angle AS BYTE) SHARED STATIC
+DECLARE SUB SpriteColor(spr_nr AS BYTE, color AS BYTE) SHARED STATIC
+DECLARE SUB SpriteShape(spr_nr AS BYTE, shape AS BYTE) SHARED STATIC
+DECLARE SUB SpriteAt(spr_nr AS BYTE, x AS BYTE, y AS BYTE) SHARED STATIC
+DECLARE SUB SpriteMove(spr_nr AS BYTE, dx AS BYTE, dy AS BYTE) SHARED STATIC
+DECLARE SUB SpriteMoveForward(spr_nr AS BYTE, angle AS BYTE, speed AS BYTE) SHARED STATIC
+DECLARE SUB ShapeClear(Shape AS BYTE) SHARED STATIC
+
 rem **************************************
 rem * Color constants
 rem **************************************
@@ -18,22 +38,12 @@ SHARED CONST COLOR_LIGHTGREEN  = 13
 SHARED CONST COLOR_LIGHTBLUE   = 14
 SHARED CONST COLOR_LIGHTGRAY   = 15
 
-const SPR_ENABLE        = $d015 
-const SPR_X_COORD       = $d000
-const SPR_Y_COORD       = $d001
-const SPR_X_COORD_MSB   = $d010
-const SPR_MULTICOLOR    = $d01c
-const SPR_MCOLOR1       = $d025
-const SPR_MCOLOR2       = $d026
-const SPR_EXP_X         = $d01d
-const SPR_EXP_Y         = $d017
-const SPR_DATA_PRIO     = $d01b
-const SPR_SPR_COLL      = $d01e
-const SPR_DATA_COLL     = $d01f
-const SPR_COLOR         = $d027
-
 CONST TEXT_BANK        = 0
 CONST TEXT_SCRMEM      = 1
+
+DIM HiresBank AS BYTE
+DIM HiresBitmap AS BYTE
+DIM HiresScrMem AS BYTE
 
 DIM ZpAddr AS WORD FAST
 DIM HiresSetAddr AS WORD FAST
@@ -60,18 +70,10 @@ DIM PixelMask(200) AS BYTE
         NEXT t2
     NEXT t
 
-SUB hires_on(Bank AS BYTE, Bitmap AS BYTE, ScrMem AS BYTE) SHARED STATIC
-    rem -- BANK 0 to 3
-    poke $dd00, (peek($dd00) AND %11111100) OR (Bank XOR %11)
-
-    rem -- BITMAP 0 to 1, SCRMEM 0 to 15
-    poke $d018, SHL(ScrMem, 4) OR SHL(Bitmap, 3)
-
-    rem -- Bitmap mode on
-    poke $d011, peek($d011) OR %00100000
-
-    rem -- Multicolor mode off
-    poke $d016, peek($d016) AND %11101111
+SUB hires_setup(Bank AS BYTE, Bitmap AS BYTE, ScrMem AS BYTE) SHARED STATIC
+    HiresBank = Bank
+    HiresBitmap = Bitmap
+    HiresScrMem = ScrMem
 
     BankAddr = 16384 * Bank
     BitmapAddr = BankAddr + 8192 * Bitmap
@@ -84,6 +86,22 @@ SUB hires_on(Bank AS BYTE, Bitmap AS BYTE, ScrMem AS BYTE) SHARED STATIC
         Y_Table_Lo(t) = PEEK(@addr)
         Y_Table_Hi(t) = PEEK(@addr+1)
     NEXT t
+
+    CALL hires_unset()
+END SUB
+
+SUB hires_on() SHARED STATIC
+    rem -- BANK 0 to 3
+    poke $dd00, (peek($dd00) AND %11111100) OR (HiresBank XOR %11)
+
+    rem -- BITMAP 0 to 1, SCRMEM 0 to 15
+    poke $d018, SHL(HiresScrMem, 4) OR SHL(HiresBitmap, 3)
+
+    rem -- Bitmap mode on
+    poke $d011, peek($d011) OR %00100000
+
+    rem -- Multicolor mode off
+    poke $d016, peek($d016) AND %11101111
 END SUB
 
 SUB hires_off() SHARED STATIC
@@ -290,7 +308,7 @@ DIM sprite_line_dx AS BYTE FAST
 DIM sprite_line_dy AS BYTE FAST
 DIM sprite_line_err AS BYTE FAST
 
-SUB ShapeDrawLine(Shape AS BYTE) SHARED STATIC
+SUB ShapeDrawLine(Shape AS BYTE) STATIC
     ZpAddr = BankAddr + 64 * CWORD(Shape)
     ASM
         ldx #$c6                ; calc dy, sy
