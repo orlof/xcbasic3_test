@@ -6,21 +6,29 @@ TYPE Vertice
 END TYPE
 
 TYPE Ship
+    x AS WORD
+    y AS WORD
+    dx AS WORD
+    dy AS WORD
     VisibleAngle AS BYTE
-    angle AS BYTE
+    RealAngle AS BYTE
     rotation AS BYTE
-    speed AS BYTE
     geometry AS WORD
     slot AS BYTE
 END TYPE
 
+DIM ImpulseX(32) AS WORD @ _ImpulseX
+DIM ImpulseY(32) AS WORD @ _ImpulseY
+
 CONST SHAPE_END  = %10000000
 
 DIM Geometry(255) AS Vertice @ _Geometry
-    FOR Index AS BYTE = 0 TO 255
+    FOR Index AS INT = 0 TO 255
         IF (Geometry(Index).Radial AND SHAPE_END) <> 0 THEN EXIT FOR
         Geometry(Index).Angular = SHL(Geometry(Index).Angular, 3)
     NEXT Index
+    print 2*Index
+    end
 
 CALL hires_setup(2, 1, 0)
 CALL hires_color(COLOR_WHITE, COLOR_BLACK)
@@ -45,14 +53,19 @@ DIM shape(16) AS WORD
     shape(14) = @GeomShip14
     shape(15) = @GeomShip15
 
-DIM t AS BYTE
+DIM t AS BYTE FAST
 DIM s AS BYTE
 
 DIM Ships(16) AS Ship
     FOR t = 0 TO 15
-        Ships(t).angle = 16 * t
-        Ships(t).VisibleAngle = Ships(t).angle
-        Ships(t).speed = 2
+        Ships(t).x = 0
+        POKE @Ships(t).x + 1, 16 * t
+        Ships(t).y = 0
+        POKE @Ships(t).y + 1, 16 * t
+        Ships(t).dx = 0
+        Ships(t).dy = 0
+        Ships(t).RealAngle = 16 * t
+        Ships(t).VisibleAngle = Ships(t).RealAngle
         Ships(t).rotation = SGN(CINT(t)-8)
         Ships(t).geometry = shape(t)
         Ships(t).slot = 32 + t
@@ -63,10 +76,10 @@ DIM Ships(16) AS Ship
             CALL SpriteColor(t, t)
         END IF
 
-        CALL SpriteAt(t, 16*t, 16*t)
+        CALL SpriteAt(t, PEEK(@Ships(t).x + 1), PEEK(@Ships(t).y + 1))
         CALL SpriteShape(t, Ships(t).slot)
         CALL ShapeClear(Ships(t).slot)
-        CALL ShapeDrawGeometry(Ships(t).slot, Ships(t).geometry, Ships(t).angle)
+        CALL ShapeDrawGeometry(Ships(t).slot, Ships(t).geometry, Ships(t).RealAngle)
     NEXT t
 
 CALL SpriteInit()
@@ -78,17 +91,22 @@ TYPE Pixel
     dy AS BYTE
 END TYPE
 
-DIM Ammo(15) AS Pixel
+DIM Ammo(16) AS Pixel
 DIM NumShapesUpdated AS BYTE
+DIM GameLoopCounter AS BYTE
+    GameLoopCounter = 0
+CONST ACCELERATION_INTERVAL = 1
+DIM NextAccelerationUpdate AS BYTE
+    NextAccelerationUpdate = ACCELERATION_INTERVAL
 
 looper:
-    FOR s = 0 TO 15
-        Ammo(s).x = sprx(s) - 24 + 11
-        Ammo(s).y = spry(s) - 50 + 10
-        index = (Ships(s).angle AND %11111000) OR 4
-        Ammo(s).dx = RotX(index) - 11
-        Ammo(s).dy = RotY(index) - 10
-    NEXT s
+    FOR t = 0 TO 15
+        Ammo(t).x = sprx(t) - 24 + 11
+        Ammo(t).y = spry(t) - 50 + 10
+        index = (Ships(t).RealAngle AND %11111000) OR 4
+        Ammo(t).dx = RotX(index) - 11
+        Ammo(t).dy = RotY(index) - 10
+    NEXT t
     FOR s = 0 TO 50
         CALL hires_unset()
         FOR t = 0 TO 15
@@ -98,20 +116,32 @@ looper:
         NEXT t
         NumShapesUpdated = 0
         FOR t = 0 TO 15            
-            Ships(t).angle = Ships(t).angle + Ships(t).rotation
+            Ships(t).RealAngle = Ships(t).RealAngle + Ships(t).rotation
             IF NumShapesUpdated < 2 THEN
-                IF ((Ships(t).angle XOR Ships(t).VisibleAngle) AND %11111000) <> 0 THEN
+                IF ((Ships(t).RealAngle XOR Ships(t).VisibleAngle) AND %11111000) <> 0 THEN
                     NumShapesUpdated = NumShapesUpdated + 1
-                    Ships(t).VisibleAngle = Ships(t).angle
+                    Ships(t).VisibleAngle = Ships(t).RealAngle
                     Ships(t).slot = Ships(t).slot XOR %00010000
                     CALL ShapeClear(Ships(t).slot)
-                    CALL ShapeDrawGeometry(Ships(t).slot, Ships(t).geometry, Ships(t).angle)
+                    CALL ShapeDrawGeometry(Ships(t).slot, Ships(t).geometry, Ships(t).RealAngle)
                     CALL SpriteShape(t, Ships(t).slot)
                 END IF
             END IF
-            CALL SpriteMoveForward(t, Ships(t).angle, Ships(t).speed)
+            CALL SpriteAt(t, PEEK(@Ships(t).x + 1), PEEK(@Ships(t).y + 1))
+        NEXT t
+        IF GameLoopCounter = NextAccelerationUpdate THEN
+            NextAccelerationUpdate = GameLoopCounter + ACCELERATION_INTERVAL
+            FOR t = 0 TO 15            
+                Ships(t).dx = Ships(t).dx + ImpulseX(SHR(Ships(t).RealAngle,3))
+                Ships(t).dy = Ships(t).dy + ImpulseY(SHR(Ships(t).RealAngle,3))
+            NEXT t
+        END IF
+        FOR t = 0 TO 15            
+            Ships(t).x = Ships(t).x + Ships(t).dx
+            Ships(t).y = Ships(t).y + Ships(t).dy
         NEXT t
         CALL SpriteUpdate()
+        GameLoopCounter = GameLoopCounter + 1
     NEXT s
 goto looper
 
@@ -267,3 +297,14 @@ DATA AS BYTE 0, 3
 DATA AS BYTE 0, %01000000
 
 DATA AS BYTE 0, %10000000
+
+_ImpulseX:
+DATA AS WORD 16,16,15,13,11,9,6,3
+DATA AS WORD 0,65533,65530,65527,65525,65523,65521,65520
+DATA AS WORD 65520,65520,65521,65523,65525,65527,65530,65533
+DATA AS WORD 0,3,6,9,11,13,15,16
+_ImpulseY:
+DATA AS WORD 0,65533,65530,65527,65525,65523,65521,65520
+DATA AS WORD 65520,65520,65521,65523,65525,65527,65530,65533
+DATA AS WORD 0,3,6,9,11,13,15,16
+DATA AS WORD 16,16,15,13,11,9,6,3
